@@ -17,9 +17,7 @@ mod task;
 use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM};
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
-use crate::syscall::SyscallInfo;
 use alloc::collections::BTreeMap;
-use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus, TaskInfo};
@@ -159,11 +157,11 @@ impl TaskManager {
     }
 
     /// Get the task syscall list of the current task
-    fn get_current_task_syscall_list(&self) -> Vec<SyscallInfo> {
-        let inner = self.inner.exclusive_access();
-        let current = inner.current_task;
-        inner.tasks[current].task_info.syscall_list.clone()
-    }
+    // fn get_current_task_syscall_list(&self) -> Vec<SyscallInfo> {
+    //     let inner = self.inner.exclusive_access();
+    //     let current = inner.current_task;
+    //     inner.tasks[current].task_info.syscall_list.clone()
+    // }
 
     /// Add syscall call times to current task;
     fn add_current_task_syscall_times(&self, syscall_id: usize) {
@@ -174,12 +172,12 @@ impl TaskManager {
     }
 
     /// Add syscall info to current task;
-    fn add_current_task_syscall_info(&self, syscall_info: SyscallInfo) {
-        let mut inner = self.inner.exclusive_access();
-        let current = inner.current_task;
-        let task_info = &mut inner.tasks[current].task_info;
-        task_info.syscall_list.push(syscall_info);
-    }
+    // fn add_current_task_syscall_info(&self, syscall_info: SyscallInfo) {
+    //     let mut inner = self.inner.exclusive_access();
+    //     let current = inner.current_task;
+    //     let task_info = &mut inner.tasks[current].task_info;
+    //     task_info.syscall_list.push(syscall_info);
+    // }
 
     /// Get the first dispatched time of the current task
     fn get_current_task_first_dispatched_time(&self) -> usize {
@@ -244,13 +242,13 @@ pub fn add_current_task_syscall_times(syscall_id: usize) {
     TASK_MANAGER.add_current_task_syscall_times(syscall_id);
 }
 /// Get the task syscall list of the current task
-pub fn current_task_syscall_list() -> Vec<SyscallInfo> {
-    TASK_MANAGER.get_current_task_syscall_list()
-}
+// pub fn current_task_syscall_list() -> Vec<SyscallInfo> {
+//     TASK_MANAGER.get_current_task_syscall_list()
+// }
 /// Add syscall info to current task;
-pub fn add_current_task_syscall_info(syscall_info: SyscallInfo) {
-    TASK_MANAGER.add_current_task_syscall_info(syscall_info);
-}
+// pub fn add_current_task_syscall_info(syscall_info: SyscallInfo) {
+//     TASK_MANAGER.add_current_task_syscall_info(syscall_info);
+// }
 
 /// Get the first dispatched time of the current task
 pub fn current_task_first_dispatched_time() -> usize {

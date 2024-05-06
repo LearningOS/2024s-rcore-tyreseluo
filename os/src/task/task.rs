@@ -1,9 +1,9 @@
 //! Types related to task management
 
-use alloc::{collections::BTreeMap, vec::Vec};
+use alloc::collections::BTreeMap;
 
 
-use crate::syscall::SyscallInfo;
+//use crate::syscall::SyscallInfo;
 
 use super::TaskContext;
 
@@ -37,7 +37,7 @@ pub struct TaskInfo {
     /// The syscall times of the task, the key is the syscall id, the value is the times
     pub syscall_times: BTreeMap<usize, usize>,
     /// The called syscall list of the task
-    pub syscall_list: Vec<SyscallInfo>,
+    //pub syscall_list: Vec<SyscallInfo>,
     /// Whether the task is the first dispatched task
     pub is_first_time_dispatched: bool,
     /// The first dispatched time of the task
@@ -50,7 +50,7 @@ impl TaskInfo {
         TaskInfo {
             is_first_time_dispatched: true,
             syscall_times: BTreeMap::new(),
-            syscall_list: Vec::new(),
+            //syscall_list: Vec::new(),
             first_dispatched_time: 0,
         }
     }
