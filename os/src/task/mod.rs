@@ -14,12 +14,15 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::config::MAX_APP_NUM;
+use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM};
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
+use crate::syscall::SyscallInfo;
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
-pub use task::{TaskControlBlock, TaskStatus};
+pub use task::{TaskControlBlock, TaskStatus, TaskInfo};
 
 pub use context::TaskContext;
 
@@ -51,10 +54,13 @@ lazy_static! {
     /// Global variable: TASK_MANAGER
     pub static ref TASK_MANAGER: TaskManager = {
         let num_app = get_num_app();
-        let mut tasks = [TaskControlBlock {
-            task_cx: TaskContext::zero_init(),
-            task_status: TaskStatus::UnInit,
-        }; MAX_APP_NUM];
+        let mut tasks: [TaskControlBlock; MAX_APP_NUM]= core::array::from_fn(|_| {
+            TaskControlBlock {
+                task_cx: TaskContext::zero_init(),
+                task_status: TaskStatus::UnInit,
+                task_info: TaskInfo::default(),
+            }
+        });
         for (i, task) in tasks.iter_mut().enumerate() {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
             task.task_status = TaskStatus::Ready;
@@ -80,6 +86,7 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let task0 = &mut inner.tasks[0];
         task0.task_status = TaskStatus::Running;
+        task0.task_info.set_timestamp_is_first_dispatched();
         let next_task_cx_ptr = &task0.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -135,6 +142,53 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    /// Get the task status of the current task
+    fn get_current_task_status(&self) -> TaskStatus {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_status
+    }
+
+    /// Get the task syscall times of the current task
+    /// the key is the syscall id, the value is the times
+    fn get_current_task_syscall_times(&self) -> BTreeMap<usize, usize> {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_info.syscall_times.clone()
+    }
+
+    /// Get the task syscall list of the current task
+    fn get_current_task_syscall_list(&self) -> Vec<SyscallInfo> {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_info.syscall_list.clone()
+    }
+
+    /// Add syscall call times to current task;
+    fn add_current_task_syscall_times(&self, syscall_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let task_info = &mut inner.tasks[current].task_info;
+        *task_info.syscall_times.entry(syscall_id).or_insert(0) += 1;
+    }
+
+    /// Add syscall info to current task;
+    fn add_current_task_syscall_info(&self, syscall_info: SyscallInfo) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let task_info = &mut inner.tasks[current].task_info;
+        task_info.syscall_list.push(syscall_info);
+    }
+
+    /// Get the first dispatched time of the current task
+    fn get_current_task_first_dispatched_time(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_info.first_dispatched_time
+    }
+
+
 }
 
 /// Run the first task in task list.
@@ -168,4 +222,37 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+/// Get the task status of the current task
+pub fn current_task_status() -> TaskStatus {
+    TASK_MANAGER.get_current_task_status()
+}
+
+/// Get the task syscall times of the current task
+pub fn current_task_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
+    let syscall_times_map = TASK_MANAGER.get_current_task_syscall_times();
+    let mut syscall_times = [0; MAX_SYSCALL_NUM];
+
+    for (syscall_id, times) in syscall_times_map {
+        syscall_times[syscall_id] = times as u32;
+    }
+    syscall_times
+}
+/// Add syscall times to current task;
+pub fn add_current_task_syscall_times(syscall_id: usize) {
+    TASK_MANAGER.add_current_task_syscall_times(syscall_id);
+}
+/// Get the task syscall list of the current task
+pub fn current_task_syscall_list() -> Vec<SyscallInfo> {
+    TASK_MANAGER.get_current_task_syscall_list()
+}
+/// Add syscall info to current task;
+pub fn add_current_task_syscall_info(syscall_info: SyscallInfo) {
+    TASK_MANAGER.add_current_task_syscall_info(syscall_info);
+}
+
+/// Get the first dispatched time of the current task
+pub fn current_task_first_dispatched_time() -> usize {
+    TASK_MANAGER.get_current_task_first_dispatched_time()
 }
