@@ -99,12 +99,12 @@ fn kernel_log_info() {
 pub fn rust_main() -> ! {
     clear_bss();
     kernel_log_info();
-    mm::init();
+    mm::init(); // 内存管理初始化
     println!("[kernel] back to world!");
-    mm::remap_test();
-    trap::init();
+    mm::remap_test(); // 检查内核地址空间的多级页表是否被正确设置
+    trap::init(); // init trap
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
-    task::run_first_task();
+    task::run_first_task(); // run the first task
     panic!("Unreachable in rust_main!");
 }

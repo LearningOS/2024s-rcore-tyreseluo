@@ -34,6 +34,7 @@ lazy_static! {
         Arc::new(unsafe { UPSafeCell::new(MemorySet::new_kernel()) });
 }
 /// address space
+/// 地址空间
 pub struct MemorySet {
     page_table: PageTable,
     areas: Vec<MapArea>,
@@ -63,6 +64,21 @@ impl MemorySet {
             None,
         );
     }
+    /// Remove a framed area.
+    pub fn remove_framed_area(&mut self, start_va: VirtAddr, end_va: VirtAddr) {
+        let virt_page_start = start_va.floor();
+        let virt_page_end = end_va.ceil();
+        let index = self.areas.iter_mut().position(|area| {
+            area.vpn_range.get_start() == virt_page_start
+                && area.vpn_range.get_end() == virt_page_end
+                && area.map_type == MapType::Framed
+        });
+        if let Some(index) = index {
+            self.areas[index].unmap(&mut self.page_table);
+            self.areas.remove(index);
+        }
+    }
+
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
@@ -71,6 +87,7 @@ impl MemorySet {
         self.areas.push(map_area);
     }
     /// Mention that trampoline is not collected by areas.
+    /// 映射 trampoline
     fn map_trampoline(&mut self) {
         self.page_table.map(
             VirtAddr::from(TRAMPOLINE).into(),
@@ -82,8 +99,10 @@ impl MemorySet {
     pub fn new_kernel() -> Self {
         let mut memory_set = Self::new_bare();
         // map trampoline
+        // 映射 trampoline
         memory_set.map_trampoline();
         // map kernel sections
+        // 映射内核的各个段
         info!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
         info!(".rodata [{:#x}, {:#x})", srodata as usize, erodata as usize);
         info!(".data [{:#x}, {:#x})", sdata as usize, edata as usize);
@@ -91,43 +110,47 @@ impl MemorySet {
             ".bss [{:#x}, {:#x})",
             sbss_with_stack as usize, ebss as usize
         );
+        // 映射 .text 段(代码段)
         info!("mapping .text section");
         memory_set.push(
             MapArea::new(
                 (stext as usize).into(),
                 (etext as usize).into(),
                 MapType::Identical,
-                MapPermission::R | MapPermission::X,
+                MapPermission::R | MapPermission::X, // text 段是可读可执行的
             ),
             None,
         );
+        // 映射 .rodata 段
         info!("mapping .rodata section");
         memory_set.push(
             MapArea::new(
                 (srodata as usize).into(),
                 (erodata as usize).into(),
                 MapType::Identical,
-                MapPermission::R,
+                MapPermission::R, // rodata 段是只读的
             ),
             None,
         );
+        // 映射 .data 段
         info!("mapping .data section");
         memory_set.push(
             MapArea::new(
                 (sdata as usize).into(),
                 (edata as usize).into(),
                 MapType::Identical,
-                MapPermission::R | MapPermission::W,
+                MapPermission::R | MapPermission::W, // data 段是可读可写的
             ),
             None,
         );
+        // 映射 .bss 段
         info!("mapping .bss section");
         memory_set.push(
             MapArea::new(
                 (sbss_with_stack as usize).into(),
                 (ebss as usize).into(),
                 MapType::Identical,
-                MapPermission::R | MapPermission::W,
+                MapPermission::R | MapPermission::W, // bss 段是可读可写的
             ),
             None,
         );
@@ -262,11 +285,19 @@ impl MemorySet {
             false
         }
     }
+
+    /// Check if the memeory range is allocated
+    pub fn is_allocated(&self, start: VirtAddr, end: VirtAddr) -> bool {
+        self.areas.iter().any(|area| {
+            area.vpn_range.get_end() > start.floor() && area.vpn_range.get_start() < end.ceil()
+        })
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
+/// 逻辑段
 pub struct MapArea {
-    vpn_range: VPNRange,
-    data_frames: BTreeMap<VirtPageNum, FrameTracker>,
+    vpn_range: VPNRange, //其中 VPNRange 描述一段虚拟页号的连续区间，表示该逻辑段在地址区间中的位置和长度。
+    data_frames: BTreeMap<VirtPageNum, FrameTracker>, //保存了该逻辑段内的每个虚拟页面和它被映射到的物理页帧 FrameTracker 的一个键值对容器 BTreeMap 
     map_type: MapType,
     map_perm: MapPermission,
 }
@@ -343,7 +374,7 @@ impl MapArea {
         let len = data.len();
         loop {
             let src = &data[start..len.min(start + PAGE_SIZE)];
-            let dst = &mut page_table
+            let dst: &mut [u8] = &mut page_table
                 .translate(current_vpn)
                 .unwrap()
                 .ppn()
@@ -360,9 +391,11 @@ impl MapArea {
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 /// map type for memory set: identical or framed
+/// MapType 描述该逻辑段内的所有虚拟页面映射到物理页帧的同一种方式，它是一个枚举类型，
+/// 在内核当前的实现中支持两种方式：
 pub enum MapType {
-    Identical,
-    Framed,
+    Identical, // Identical 恒等映射方式
+    Framed, // Framed 则表示对于每个虚拟页面都有一个新分配的物理页帧与之对应，虚地址与物理地址的映射关系是相对随机的。
 }
 
 bitflags! {

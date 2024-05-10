@@ -1,9 +1,13 @@
 //! Types related to task management
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
+
 use super::TaskContext;
 use crate::config::TRAP_CONTEXT_BASE;
 use crate::mm::{
     kernel_stack_position, MapPermission, MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE,
 };
+use crate::syscall::SyscallInfo;
 use crate::trap::{trap_handler, TrapContext};
 
 /// The task control block (TCB) of a task.
@@ -14,6 +18,9 @@ pub struct TaskControlBlock {
     /// Maintain the execution status of the current process
     pub task_status: TaskStatus,
 
+    /// Task information
+    pub task_info: TaskInfo,
+    
     /// Application address space
     pub memory_set: MemorySet,
 
@@ -63,6 +70,7 @@ impl TaskControlBlock {
             base_size: user_sp,
             heap_bottom: user_sp,
             program_brk: user_sp,
+            task_info: TaskInfo::default(),
         };
         // prepare TrapContext in user space
         let trap_cx = task_control_block.get_trap_cx();
@@ -97,6 +105,37 @@ impl TaskControlBlock {
         }
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct TaskInfo {
+    pub is_first_time_dispatched: bool,
+    /// The first dispatched time of the task
+    pub first_dispatched_time: usize,
+    /// System call times, the index is the syscall number, and the value is the call times
+    pub syscall_times: BTreeMap<usize, u32>,
+    /// The called syscall list of the task
+    pub syscall_list: Vec<SyscallInfo>,
+}
+
+impl TaskInfo {
+    pub fn default() -> Self {
+        TaskInfo {
+            is_first_time_dispatched: true,
+            first_dispatched_time: 0,
+            syscall_times: BTreeMap::new(),
+            syscall_list: Vec::new(),
+        }
+    }
+
+     /// Set the task as dispatched and record the first dispatched time
+     pub fn set_timestamp_is_first_dispatched(&mut self) {
+        if self.is_first_time_dispatched {
+            self.first_dispatched_time = crate::timer::get_time_us();
+            self.is_first_time_dispatched = false;
+        }
+    }
+}
+
 
 #[derive(Copy, Clone, PartialEq)]
 /// task status: UnInit, Ready, Running, Exited
