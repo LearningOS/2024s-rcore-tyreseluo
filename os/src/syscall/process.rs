@@ -2,7 +2,7 @@
 use crate::{
     config::MAX_SYSCALL_NUM, mm::get_phyical_address, task::{
         change_program_brk, current_task_mmap, current_task_munmap, current_task_status, current_task_syscall_times, current_user_token, exit_current_and_run_next, first_dispatched_time, suspend_current_and_run_next, TaskStatus
-    }, timer::get_time_us 
+    }, timer::{get_time_ms, get_time_us} 
 };
 
 #[repr(C)]
@@ -47,8 +47,9 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
     // 获取当前地址空间的页表
     let token = current_user_token();
+    let physical_address = get_phyical_address(token, ts as usize);
     let time = get_time_us();
-    let physical_address = get_phyical_address(token, ts as usize); 
+
     unsafe {
         *(physical_address as *mut TimeVal) = TimeVal {
             sec: time / 1_000_000,
@@ -69,7 +70,7 @@ pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
     unsafe {
         (*ptr).status = current_task_status();
         (*ptr).syscall_times = current_task_syscall_times();
-        (*ptr).time = first_dispatched_time();
+        (*ptr).time = get_time_ms() - first_dispatched_time();
     }
     0
 }
