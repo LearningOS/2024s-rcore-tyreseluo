@@ -20,7 +20,6 @@ mod processor;
 mod switch;
 #[allow(clippy::module_inception)]
 mod task;
-
 use crate::loader::get_app_data_by_name;
 use alloc::sync::Arc;
 use lazy_static::*;
@@ -88,7 +87,6 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         }
     }
     // ++++++ release parent PCB
-
     inner.children.clear();
     // deallocate user space
     inner.memory_set.recycle_data_pages();

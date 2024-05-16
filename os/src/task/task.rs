@@ -1,12 +1,14 @@
 //! Types related to task management & Functions for completely changing TCB
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
-use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
+use crate::config::{MAX_SYSCALL_NUM, PAGE_SIZE, TRAP_CONTEXT_BASE};
+use crate::mm::{MapPermission, MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
+use crate::syscall::SyscallInfo;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
-use alloc::vec::Vec;
 use core::cell::RefMut;
 
 /// Task control block structure
@@ -55,6 +57,9 @@ pub struct TaskControlBlockInner {
 
     /// current stride
     pub stride: usize,
+
+    /// Task information
+    pub task_info: TaskInfo,
 
     /// Application address space
     pub memory_set: MemorySet,
@@ -127,6 +132,7 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    task_info: TaskInfo::default(),
                 })
             },
         };
@@ -202,6 +208,7 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    task_info: TaskInfo::default(),
                 })
             },
         });
@@ -260,7 +267,122 @@ impl TaskControlBlock {
         assert!(prio > 1, "priority should be larger than 1");
         self.inner_exclusive_access().priority = prio
     }
+
+
+    /// Alloc memory
+    pub fn alloc_memory(&self, start: usize, len: usize, port: usize) -> isize {
+        if start % PAGE_SIZE != 0 {
+            return -1;
+        }
+
+        if port & !0x7 != 0 || port & 0x7 == 0 {
+            return -1;
+        }
+
+        let start_va = VirtAddr::from(start);
+        let end_va = VirtAddr::from(start + len);
+
+        let mut inner = self.inner.exclusive_access();
+    
+
+        if inner.memory_set.is_allocated(start_va, end_va) {
+            return -1;
+        }
+
+        let permission = MapPermission::from_bits((port as u8) << 1).unwrap() | MapPermission::U;
+
+        inner.memory_set.insert_framed_area(start_va, end_va, permission);
+        0
+
+    }
+
+    /// Dealloc memory
+    pub fn dealloc(&self, start: usize, len: usize) -> isize {
+        if start % PAGE_SIZE != 0 {
+            return -1;
+        }
+
+        let start_va = VirtAddr::from(start);
+        let end_va = VirtAddr::from(start + len);
+
+        if !start_va.aligned() {
+            return -1;
+        }
+
+        if !end_va.aligned() {
+            return -1;
+        }
+
+        let mut inner = self.inner.exclusive_access();
+        inner.memory_set.remove_framed_area(start_va, end_va);
+        0
+    }
+
+    /// get the task status
+    pub fn get_task_status(&self) -> TaskStatus {
+        self.inner_exclusive_access().task_status
+    }
+
+    /// get first dispatched time
+    pub fn get_first_dispatched_time(&self) -> usize {
+        self.inner_exclusive_access().task_info.first_dispatched_time
+    }
+
+    /// get task syscall times
+    pub fn get_task_syscall_times(&self) -> [u32; MAX_SYSCALL_NUM]  {
+        let times =  self.inner_exclusive_access().task_info.syscall_times.clone();
+        let mut syscall_times = [0; MAX_SYSCALL_NUM];
+        for (syscall_id, time) in times {
+            syscall_times[syscall_id] = time as u32;
+        }
+        syscall_times
+    }
+
+    /// add task syscall times
+    pub fn add_task_syscall_times(&self, syscall_id: usize) {
+        let mut inner = self.inner_exclusive_access();
+        let times = &mut inner.task_info.syscall_times;
+        *times.entry(syscall_id).or_default() += 1;
+    }
+    
+    /// add task syscall info
+    pub fn add_task_syscall_info(&self, syscall_info: SyscallInfo) {
+        let mut inner = self.inner_exclusive_access();
+        inner.task_info.syscall_list.push(syscall_info);
+    }
+
 }
+
+#[derive(Clone, Debug)]
+pub struct TaskInfo {
+    pub is_first_time_dispatched: bool,
+    /// The first dispatched time of the task
+    pub first_dispatched_time: usize,
+    /// System call times, the index is the syscall number, and the value is the call times
+    pub syscall_times: BTreeMap<usize, u32>,
+    /// The called syscall list of the task
+    pub syscall_list: Vec<SyscallInfo>,
+}
+
+impl TaskInfo {
+    pub fn default() -> Self {
+        TaskInfo {
+            is_first_time_dispatched: true,
+            first_dispatched_time: 0,
+            syscall_times: BTreeMap::new(),
+            syscall_list: Vec::new(),
+        }
+    }
+
+     /// Set the task as dispatched and record the first dispatched time
+     pub fn set_timestamp_is_first_dispatched(&mut self) {
+        if self.is_first_time_dispatched {
+            self.first_dispatched_time = crate::timer::get_time_us();
+            self.is_first_time_dispatched = false;
+        }
+    }
+}
+
 
 #[derive(Copy, Clone, PartialEq)]
 /// task status: UnInit, Ready, Running, Exited

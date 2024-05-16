@@ -41,12 +41,57 @@ const SYSCALL_SPAWN: usize = 400;
 const SYSCALL_TASK_INFO: usize = 410;
 
 mod fs;
-mod process;
+pub mod process;
 
 use fs::*;
 use process::*;
+
+use crate::task::current_task;
+
+/// Syscall information
+#[derive(Clone, Debug)]
+pub struct SyscallInfo {
+    /// Syscall id
+    pub syscall_id: usize,
+    /// Syscall name
+    pub syscall_name: &'static str,
+}
+
+impl SyscallInfo {
+    /// Create a new SyscallInfo
+    pub fn new(syscall_id: usize) -> Self {
+        Self {
+            syscall_id,
+            syscall_name: Self::get_syscall_info(syscall_id).unwrap_or("unknown syscall"),
+        }
+    }
+
+    /// Get syscall info by syscall id
+    pub fn get_syscall_info(syscall_id: usize) -> Option<&'static str> {
+        match syscall_id {
+            SYSCALL_WRITE => Some("write"),
+            SYSCALL_EXIT => Some("exit"),
+            SYSCALL_YIELD => Some("yield"),
+            SYSCALL_GET_TIME => Some("get_time"),
+            SYSCALL_SBRK => Some("sbrk"),
+            SYSCALL_MUNMAP => Some("munmap"),
+            SYSCALL_MMAP => Some("mmap"),
+            SYSCALL_TASK_INFO => Some("task_info"),
+            _ => None,
+        }
+    }
+    
+}
+
+
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
+    // add current task syscall times
+    current_task().unwrap().add_task_syscall_times(syscall_id);
+    // add current task syscall info
+    let syscall_info = SyscallInfo::new(syscall_id);
+    current_task().unwrap().add_task_syscall_info(syscall_info);
+
     match syscall_id {
         SYSCALL_READ => sys_read(args[0], args[1] as *const u8, args[2]),
         SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
