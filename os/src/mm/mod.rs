@@ -19,13 +19,13 @@ pub use memory_set::remap_test;
 pub use memory_set::{kernel_token, MapPermission, MemorySet, KERNEL_SPACE};
 use page_table::PTEFlags;
 pub use page_table::{
-    translated_byte_buffer, translated_ref, translated_refmut, translated_str, PageTable,
+    translated_byte_buffer, translated_ref, translated_refmut, translated_str, PageTable, get_phyical_address, 
     PageTableEntry, UserBuffer, UserBufferIterator,
 };
 
 /// initiate heap allocator, frame allocator and kernel space
 pub fn init() {
-    heap_allocator::init_heap();
-    frame_allocator::init_frame_allocator();
-    KERNEL_SPACE.exclusive_access().activate();
+    heap_allocator::init_heap(); // init heap allocator
+    frame_allocator::init_frame_allocator(); // init frame allocator
+    KERNEL_SPACE.exclusive_access().activate(); // activate kernel space
 }

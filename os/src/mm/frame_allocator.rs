@@ -31,12 +31,14 @@ impl Debug for FrameTracker {
     }
 }
 
+// 回收物理页帧时，自动调用 dealloc 方法
 impl Drop for FrameTracker {
     fn drop(&mut self) {
         frame_dealloc(self.ppn);
     }
 }
 
+// 物理页帧管理器rust顶层抽象, 不管哪个一个分配器都要实现这个trait，与具体的分配器解耦
 trait FrameAllocator {
     fn new() -> Self;
     fn alloc(&mut self) -> Option<PhysPageNum>;
@@ -44,9 +46,9 @@ trait FrameAllocator {
 }
 /// an implementation for frame allocator
 pub struct StackFrameAllocator {
-    current: usize,
-    end: usize,
-    recycled: Vec<usize>,
+    current: usize, //空闲内存的起始物理页号
+    end: usize, //空闲内存的结束物理页号
+    recycled: Vec<usize>, //回收的物理页号
 }
 
 impl StackFrameAllocator {
@@ -65,10 +67,11 @@ impl FrameAllocator for StackFrameAllocator {
         }
     }
     fn alloc(&mut self) -> Option<PhysPageNum> {
+        // 先优先从回收的物理页号中分配
         if let Some(ppn) = self.recycled.pop() {
             Some(ppn.into())
         } else if self.current == self.end {
-            None
+            None // no more free frames to allocate
         } else {
             self.current += 1;
             Some((self.current - 1).into())
@@ -85,25 +88,33 @@ impl FrameAllocator for StackFrameAllocator {
     }
 }
 
+// type alias for frame allocator
 type FrameAllocatorImpl = StackFrameAllocator;
 
+// 创建一个全局的StackFrameAllocator实例
 lazy_static! {
     /// frame allocator instance through lazy_static!
     pub static ref FRAME_ALLOCATOR: UPSafeCell<FrameAllocatorImpl> =
         unsafe { UPSafeCell::new(FrameAllocatorImpl::new()) };
 }
+/// 初始化帧分配器，使用`ekernel`和`MEMORY_END`初始化帧分配器、MemoryEnd 在 Config 中定义os常量
+/// 代表除内核外的剩余内存的起始地址和结束地址的可分配的内存区间大小
+/// 这里我们调用物理地址 PhysAddr 的 floor/ceil 方法分别下/上取整获得可用的物理页号区间。
 /// initiate the frame allocator using `ekernel` and `MEMORY_END`
 pub fn init_frame_allocator() {
     extern "C" {
         fn ekernel();
     }
     FRAME_ALLOCATOR.exclusive_access().init(
-        PhysAddr::from(ekernel as usize).ceil(),
-        PhysAddr::from(MEMORY_END).floor(),
+        PhysAddr::from(ekernel as usize).ceil(), // 向上取整 High Address
+        PhysAddr::from(MEMORY_END).floor(), // 向下取整 Low Address
     );
 }
 
+//////////公开给其他内核模块调用的分配/回收物理页帧的接口：////////////
+
 /// Allocate a physical page frame in FrameTracker style
+/// 这里借用了 RAII 的思想，将一个物理页帧的生命周期绑定到一个 FrameTracker 变量上
 pub fn frame_alloc() -> Option<FrameTracker> {
     FRAME_ALLOCATOR
         .exclusive_access()

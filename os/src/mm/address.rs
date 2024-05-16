@@ -164,14 +164,16 @@ impl From<PhysPageNum> for PhysAddr {
     }
 }
 
+/// 虚拟页号
 impl VirtPageNum {
     /// Get the indexes of the page table entry
+    /// 获得页表项的索引
     pub fn indexes(&self) -> [usize; 3] {
         let mut vpn = self.0;
-        let mut idx = [0usize; 3];
+        let mut idx = [0usize; 3]; // 3 levels
         for i in (0..3).rev() {
-            idx[i] = vpn & 511;
-            vpn >>= 9;
+            idx[i] = vpn & 511; // 511 = 111 111 111
+            vpn >>= 9; // 右移9位，为了获得下一级的索引 
         }
         idx
     }
@@ -187,18 +189,23 @@ impl PhysAddr {
         unsafe { (self.0 as *mut T).as_mut().unwrap() }
     }
 }
+// 物理页帧号
 impl PhysPageNum {
     /// Get the reference of page table(array of ptes)
+    /// 获得PageTableEntry数组的引用
     pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
-        let pa: PhysAddr = (*self).into();
+        let pa: PhysAddr = (*self).into(); // into() 左移12位转换为物理地址，每次都得转化成物理地址去查找页表项
         unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut PageTableEntry, 512) }
     }
     /// Get the reference of page(array of bytes)
+    /// 获得字节数组的引用
     pub fn get_bytes_array(&self) -> &'static mut [u8] {
         let pa: PhysAddr = (*self).into();
         unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, 4096) }
     }
+
     /// Get the mutable reference of physical address
+    /// 获得物理地址的可变引用
     pub fn get_mut<T>(&self) -> &'static mut T {
         let pa: PhysAddr = (*self).into();
         pa.get_mut()

@@ -89,7 +89,6 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         }
     }
     // ++++++ release parent PCB
-
     inner.children.clear();
     // deallocate user space
     inner.memory_set.recycle_data_pages();

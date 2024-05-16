@@ -1,5 +1,6 @@
 //! The global allocator
 use crate::config::KERNEL_HEAP_SIZE;
+// 使用 buddy_system_allocator crate 的 LockedHeap 作为全局分配器
 use buddy_system_allocator::LockedHeap;
 
 #[global_allocator]
