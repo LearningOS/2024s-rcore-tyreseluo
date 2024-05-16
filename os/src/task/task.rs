@@ -50,6 +50,12 @@ pub struct TaskControlBlockInner {
     /// Maintain the execution status of the current process
     pub task_status: TaskStatus,
 
+    /// scheduling priority
+    pub priority: isize,
+
+    /// current stride
+    pub stride: usize,
+
     /// Application address space
     pub memory_set: MemorySet,
 
@@ -87,6 +93,7 @@ impl TaskControlBlockInner {
     }
 }
 
+/// TCBImp is the implementation of TaskControlBlock
 impl TaskControlBlock {
     /// Create a new process
     ///
@@ -112,6 +119,8 @@ impl TaskControlBlock {
                     base_size: user_sp,
                     task_cx: TaskContext::goto_trap_return(kernel_stack_top),
                     task_status: TaskStatus::Ready,
+                    priority: 16,
+                    stride: 0,
                     memory_set,
                     parent: None,
                     children: Vec::new(),
@@ -185,6 +194,8 @@ impl TaskControlBlock {
                     base_size: parent_inner.base_size,
                     task_cx: TaskContext::goto_trap_return(kernel_stack_top),
                     task_status: TaskStatus::Ready,
+                    priority: 16,
+                    stride: 0,
                     memory_set,
                     parent: Some(Arc::downgrade(self)),
                     children: Vec::new(),
@@ -204,6 +215,13 @@ impl TaskControlBlock {
         task_control_block
         // **** release child PCB
         // ---- release parent PCB
+    }
+
+    /// spawn a new process
+    pub fn spawn(&self, elf_data: &[u8]) -> Arc<Self> {
+        let new_task = Arc::new(TaskControlBlock::new(elf_data));
+        self.inner_exclusive_access().children.push(new_task.clone());
+        new_task
     }
 
     /// get pid of process
@@ -236,12 +254,19 @@ impl TaskControlBlock {
             None
         }
     }
+
+    /// set the priority of the process
+    pub fn set_priority(&self, prio: isize) {
+        assert!(prio > 1, "priority should be larger than 1");
+        self.inner_exclusive_access().priority = prio
+    }
 }
 
 #[derive(Copy, Clone, PartialEq)]
 /// task status: UnInit, Ready, Running, Exited
 pub enum TaskStatus {
     /// uninitialized
+    /// (only for the task that has not been added to the scheduler)
     UnInit,
     /// ready to run
     Ready,

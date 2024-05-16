@@ -185,7 +185,7 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
 
 /// Translate&Copy a ptr[u8] array end with `\0` to a `String` Vec through page table
 pub fn translated_str(token: usize, ptr: *const u8) -> String {
-    let page_table = PageTable::from_token(token);
+    let page_table = PageTable::from_token(token); //通过satp获取page_table
     let mut string = String::new();
     let mut va = ptr as usize;
     loop {
