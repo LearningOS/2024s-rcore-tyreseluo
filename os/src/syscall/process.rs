@@ -219,7 +219,7 @@ pub fn sys_set_priority(prio: isize) -> isize {
         "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    if prio <= -1 {
+    if prio <= 1 {
         return -1;
     }
     current_task().unwrap().set_priority(prio);
