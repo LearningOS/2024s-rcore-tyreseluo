@@ -86,6 +86,7 @@ pub struct DiskInode {
     pub indirect1: u32,
     pub indirect2: u32,
     type_: DiskInodeType,
+    pub nlink: u32 
 }
 
 impl DiskInode {
@@ -97,6 +98,7 @@ impl DiskInode {
         self.indirect1 = 0;
         self.indirect2 = 0;
         self.type_ = type_;
+        self.nlink = 1;
     }
     /// Whether this inode is a directory
     pub fn is_dir(&self) -> bool {
@@ -161,6 +163,56 @@ impl DiskInode {
                 })
         }
     }
+    
+    fn list_blocks(&self, block_device: &Arc<dyn BlockDevice>) -> Vec<u32> {
+        let mut v: Vec<u32> = Vec::new();
+        let mut current_blocks = 0usize;
+        let data_blocks = self.data_blocks() as usize;
+
+        while current_blocks < data_blocks.min(INODE_DIRECT_COUNT) {
+            v.push(self.direct[current_blocks]);
+            current_blocks += 1;
+        }
+        if current_blocks == data_blocks {
+            return v;
+        }
+
+        // indirect1 block
+        v.push(self.indirect1);
+        // indirect1
+        get_block_cache(self.indirect1 as usize, Arc::clone(block_device))
+            .lock()
+            .read(0, |indirect1: &IndirectBlock| {
+                while current_blocks < data_blocks.min(INODE_INDIRECT1_COUNT) {
+                    v.push(indirect1[current_blocks]);
+                    current_blocks += 1;
+                }
+            });
+        if current_blocks == data_blocks {
+            return v;
+        }
+
+        // indirect2 block
+        v.push(self.indirect2);
+        // indirect2
+        get_block_cache(self.indirect2 as usize, Arc::clone(block_device))
+            .lock()
+            .read(0, |indirect2: &IndirectBlock| {
+                while current_blocks < data_blocks.min(INODE_INDIRECT2_COUNT) {
+                    v.push(indirect2[0]);
+                    get_block_cache(indirect2[0] as usize, Arc::clone(block_device))
+                        .lock()
+                        .read(0, |indirect1: &IndirectBlock| {
+                            while current_blocks < data_blocks.min(INODE_INDIRECT1_COUNT) {
+                                v.push(indirect1[current_blocks]);
+                                current_blocks += 1;
+                            }
+                        });
+                }
+            });
+        v
+    }
+    
     /// Inncrease the size of current disk inode
     pub fn increase_size(
         &mut self,
@@ -235,6 +287,23 @@ impl DiskInode {
             });
     }
 
+    pub fn decrease_size(
+        &mut self,
+        block_device: &Arc<dyn BlockDevice>,
+        new_size: u32,
+    ) -> Vec<u32> {
+        let mut v: Vec<u32> = Vec::new();
+        let all_blocks = self.list_blocks(block_device);
+        let new_count = Self::total_blocks(new_size) as usize;
+        // delete 
+        for block_id in all_blocks.iter().skip(new_count) {
+            v.push(*block_id);
+        }
+        // update size
+        self.size = new_size;
+        v
+    }
+    
     /// Clear size to zero and return blocks that should be deallocated.
     /// We will clear the block contents to zero later.
     pub fn clear_size(&mut self, block_device: &Arc<dyn BlockDevice>) -> Vec<u32> {
