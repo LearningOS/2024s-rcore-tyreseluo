@@ -111,14 +111,14 @@ impl Inode {
             );
         });
 
+        if error != 0 {
+            return error;
+        }
+
         // increase nlink
         inode.modify_disk_inode(|inode_dist| {
             inode_dist.nlink += 1;
         });
-
-        if error != 0 {
-            return error;
-        }
 
         0
     }
@@ -127,43 +127,45 @@ impl Inode {
     /// 注意考虑使用 unlink 彻底删除文件的情况，此时需要回收inode以及它对应的数据块。
     /// Unlink a inode under current inode by name
     pub fn unlink(&self, inode: Arc<Inode>, name: &str) -> isize {
-        let mut fs = self.fs.lock();
-        self.modify_disk_inode(|disk_inode| {
-            assert!(disk_inode.is_dir());//目录不处理
+        {
+            let mut fs = self.fs.lock();
+            self.modify_disk_inode(|disk_inode| {
+                assert!(disk_inode.is_dir());//目录不处理
 
-            let file_count = (disk_inode.size as usize) / DIRENT_SZ;
-            let mut ent_index = 0xffff_ffff;
-            for i in 0..file_count {
-                let mut dirent= DirEntry::empty();
-                assert_eq!(
-                    disk_inode.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device,),
-                    DIRENT_SZ,
-                );
-                if dirent.name() == name {
-                    ent_index = i;
-                    break;
+                let file_count = (disk_inode.size as usize) / DIRENT_SZ;
+                let mut ent_index = 0xffff_ffff;
+                for i in 0..file_count {
+                    let mut dirent= DirEntry::empty();
+                    assert_eq!(
+                        disk_inode.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device,),
+                        DIRENT_SZ,
+                    );
+                    if dirent.name() == name {
+                        ent_index = i;
+                        break;
+                    }
                 }
-            }
 
-            if ent_index == 0xffffffff {
-                return;
-            }
+                if ent_index == 0xffffffff {
+                    return;
+                }
 
-            for i in ent_index + 1..file_count {
-                let mut dirent = DirEntry::empty();
-                assert_eq!(
-                    disk_inode.read_at(
-                        i * DIRENT_SZ,
-                        dirent.as_bytes_mut(),
-                        &self.block_device
-                    ),
-                    DIRENT_SZ,
-                );
-                disk_inode.write_at((i - 1) * DIRENT_SZ, dirent.as_bytes(), &self.block_device);
-            }
-            let new_size = (file_count - 1) * DIRENT_SZ;
-            self.decrease_size(new_size as u32, disk_inode, &mut fs);
-        });
+                for i in ent_index + 1..file_count {
+                    let mut dirent = DirEntry::empty();
+                    assert_eq!(
+                        disk_inode.read_at(
+                            i * DIRENT_SZ,
+                            dirent.as_bytes_mut(),
+                            &self.block_device
+                        ),
+                        DIRENT_SZ,
+                    );
+                    disk_inode.write_at((i - 1) * DIRENT_SZ, dirent.as_bytes(), &self.block_device);
+                }
+                let new_size = (file_count - 1) * DIRENT_SZ;
+                self.decrease_size(new_size as u32, disk_inode, &mut fs);
+            });
+        }
 
          // decrease link count
          let mut clear = false;
