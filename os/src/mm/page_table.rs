@@ -274,3 +274,23 @@ impl Iterator for UserBufferIterator {
         }
     }
 }
+
+
+/// Get the physical address from the page table
+pub fn get_phyical_address(token: usize, ptr: usize) -> usize {
+    let page_table = PageTable::from_token(token);
+
+
+    let va = VirtAddr::from(ptr);
+    let offest = va.page_offset();
+
+    let vpn = va.floor();
+
+    let ppn = match page_table.translate(vpn) {
+        Some(pte) => pte.ppn(),
+        None => panic!("get_phyical_address: can't find pte"),
+    };
+
+    let pa = ppn.0 << 12 | offest;
+    pa
+}
