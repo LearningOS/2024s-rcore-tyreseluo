@@ -96,7 +96,7 @@ impl SyscallInfo {
 
 
 /// handle syscall exception with `syscall_id` and other arguments
-pub fn syscall(syscall_id: usize, args: [usize; 4]) -> isize {
+pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     // add current task syscall times
     current_task().unwrap().add_task_syscall_times(syscall_id);
     // add current task syscall info

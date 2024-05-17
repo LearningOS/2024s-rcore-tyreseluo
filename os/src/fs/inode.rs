@@ -126,12 +126,21 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
 }
 
 /// Link a file
-pub fn link_file(old_name: &str, new_name: &str) -> isize {
+pub fn linkat(old_name: &str, new_name: &str) -> isize {
     if let Some(inode) = ROOT_INODE.find(old_name) {
         ROOT_INODE.link(inode, new_name)
     } else {
         -1
     }
+}
+
+/// Unlink a file
+pub fn unlinkat(name: &str) -> isize {
+    let inode = match ROOT_INODE.find(name) {
+        Some(inode) => inode,
+        None => return -1,
+    };
+    ROOT_INODE.unlink(inode, name)
 }
 
 impl File for OSInode {
